@@ -1,7 +1,7 @@
 # graft (расширение pi)
 
 Локальный кодовый граф репо как источник контекста для агента: собственный движок
-(`engine/graft/`, web-tree-sitter + wasm, без внешних CLI и LLM по умолчанию) и
+(`engine/`, web-tree-sitter + wasm, без внешних CLI и LLM по умолчанию) и
 тонкое расширение, которое встраивает его в pi — нативные инструменты вместо шелла,
 авто-синхронизация, blast radius после правок.
 
@@ -9,7 +9,7 @@
 
 - Зависимости пакета: `web-tree-sitter`, `tree-sitter-wasm` (wasm-грамматики, ~25 языков).
   Расширение загружает движок через jiti — внешних CLI нет, spawn не используется.
-- Построенный граф: `node engine/graft/bin/graft.mjs build` в корне репо
+- Построенный граф: `node engine/bin/graft.mjs build` в корне репо
   (или `/graft build` в pi). LLM-слой (deep-суммаризация) опционален — см. ниже.
 - Расширение работает только там, где выше cwd найден `graft/.engine/graph.json`;
   в остальных проектах — тихий no-op.
@@ -68,7 +68,7 @@ Deep — суммаризация файлов/символов и концеп�
 
 Каждое поле (baseUrl/model/apiKey/temperature/timeoutMs) берётся из первого слоя, где задано.
 
-Настройка (из консоли; в pi — та же CLI под `node engine/graft/bin/graft.mjs`):
+Настройка (из консоли; в pi — та же CLI под `node engine/bin/graft.mjs`):
 
 ```bash
 graft config set --base-url http://127.0.0.1:8000/v1 --model qwen   # в корне репо → project-конфиг
@@ -112,7 +112,7 @@ env имеет приоритет над `config.json` (per-repo, `graft config 
 | `GRFT_MCP_ROOT` | корень репо для MCP-сервера (иначе — cwd; env-only) |
 | `GRFT_LLM_CONFIG` | путь global llm.json (env-only) |
 
-## Graft CLI — `node engine/graft/bin/graft.mjs`
+## Graft CLI — `node engine/bin/graft.mjs`
 
 | Команда | Назначение |
 |---|---|
@@ -137,7 +137,7 @@ c/cpp — clangd.
 
 ## MCP-сервер
 
-`node engine/graft/bin/graft-mcp.mjs` (stdio, JSON-RPC 2.0): 7 инструментов (ask, grep,
+`node engine/bin/graft-mcp.mjs` (stdio, JSON-RPC 2.0): 7 инструментов (ask, grep,
 callers, skeleton, map, check, blast). Регистрация в pi или другом MCP-хосте:
 `"graft": { "command": "node", "args": ["<путь>/graft-mcp.mjs"], "env": { "GRFT_MCP_ROOT": "<корень репо>" } }`
 (или `graft init` — впишет в `.mcp.json` сам).
