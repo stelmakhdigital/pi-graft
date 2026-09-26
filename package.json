@@ -1,0 +1,34 @@
+{
+  "name": "pi-graft",
+  "version": "0.1.0",
+  "description": "Локальный кодовый граф репо для pi: 7 нативных инструментов graft_*, /graft, CLI и MCP-сервер (вынесен из pi-extensions)",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "tree-sitter-wasm": "^1.1.6",
+    "web-tree-sitter": "^0.26.13"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.87.0",
+    "@earendil-works/pi-tui": "^0.87.0",
+    "@types/node": "^22.20.4",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.27"
+  },
+  "pi": {
+    "extensions": [
+      "extensions/graft/index.ts"
+    ],
+    "skills": [
+      "skills/graft"
+    ]
+  }
+}
