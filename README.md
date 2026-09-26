@@ -10,8 +10,39 @@
 - **CLI** — `node engine/bin/graft.mjs` (build/map/ask/grep/callers/skeleton/check/blast/…);
 - **MCP-сервер** — `node engine/bin/graft-mcp.mjs` (stdio, JSON-RPC 2.0) для внешних агентов.
 
-Установить как pi-пакет: `pi install git:github.com/stelmakhdigital/pi-graft`
-(весь пакет = только graft). Вне репо с построенным графом расширение молчит.
+## Установка
+
+```bash
+pi install git:github.com/stelmakhdigital/pi-graft@master
+```
+
+pi клонирует репо в `~/.pi/agent/git/github.com/stelmakhdigital/pi-graft`, выполняет
+`npm i` (зависимости `web-tree-sitter` + `tree-sitter-wasm` — wasm-грамматики, ~25 языков)
+и читает поле `pi` в `package.json` — что активируется:
+
+- расширение `extensions/graft/index.ts` — инструменты `graft_*`, `/graft`, `<graft>`-секция системного промпта, blast radius, бейдж в футере;
+- скилл `skills/graft` — правила работы с графом и экономики вызовов.
+
+После установки — `/reload` (или перезапуск pi). Обновление: `pi update --extensions`
+(привязка к ветке = «latest» — подтянет актуальный HEAD `master`); для закреплённой версии —
+тег или хеш коммита: `pi install git:github.com/stelmakhdigital/pi-graft@vX.Y.Z`.
+Весь пакет = только graft; вне репо с построенным графом расширение молчит.
+
+### Первый запуск
+
+В целевом репо (в его корне):
+
+```bash
+/graft build                       # в pi (или `/graft build deep` — с LLM-суммаризацией)
+node engine/bin/graft.mjs build    # из консоли
+```
+
+Детали — ниже в «Требования» и «Graft CLI».
+
+### MCP (опционально)
+
+Для внешних MCP-хостов: `graft init` в репо (впишет `mcpServers.graft` в `.mcp.json`,
+идемпотентно; `graft uninstall` — убрать). Подробности — в секции «MCP-сервер».
 
 **Graft-движок встроён в пакет** (`engine/`): собственный движок кодового графа
 (web-tree-sitter + wasm-грамматики, 25 языков: TS/JS/Python — полная двухпроходная экстракция
