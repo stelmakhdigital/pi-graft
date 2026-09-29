@@ -622,10 +622,79 @@ export default function graftExtension(pi: ExtensionAPI) {
 			});
 	});
 
-	// ---------- Команда /graft ----------
+	// ---------- Команды /graft и /graft:* ----------
+
+	/** Деспатч подкоманд /graft (общий для `/graft <cmd>` и `/graft:<cmd>`). */
+	const runGraftCmd = async (arg: string, ctx: ExtensionContext): Promise<void> => {
+		const root = rootOf(ctx);
+		const [cmd, ...rest] = arg.split(/\s+/);
+		const restArg = rest.join(" ");
+		if (cmd === "stats") {
+			const lines: string[] = [];
+			statsReport(lines);
+			ctx.ui.notify(lines.join("\n"), "info");
+			return;
+		}
+		if (cmd === "build") {
+			const withDeep = restArg.includes("deep");
+			const deepCfg = withDeep ? resolveDeepConfig(root ?? ctx.cwd).config : undefined;
+			if (withDeep && !deepCfg) {
+				ctx.ui.notify(
+					"graft build deep: нет конфига LLM. Задайте через `graft config set --base-url … --model …` (или env GRFT_LLM_BASE_URL/GRFT_LLM_MODEL) и повторите.",
+					"error",
+				);
+				return;
+			}
+			ctx.ui.notify(
+				`Запускаю: graft build${withDeep ? " deep" : ""}… (${withDeep ? `LLM ${deepCfg!.model}` : "$0, tree-sitter-wasm"})`,
+				"info",
+			);
+			try {
+				const t0 = Date.now();
+				const rep = await build(root ?? ctx.cwd, {
+					deep: deepCfg ?? undefined,
+					onProgress: (m) => ctx.ui.notify(`graft build: ${m}`, "info"),
+				});
+				mapCache = null;
+				ctx.ui.notify(
+					`graft build готов за ${((Date.now() - t0) / 1000).toFixed(1)}s: ${rep.files} файлов, ${rep.nodes} узлов, ${rep.edges} рёбер` +
+						(rep.deep ? `, deep: +${rep.deep.filesDone}+${rep.deep.symbolsDone}, кэш ${rep.deep.filesCached}+${rep.deep.symbolsCached}, ошибок ${rep.deep.symbolsFailed}` : ""),
+					"info",
+				);
+			} catch (e) {
+				ctx.ui.notify(`graft build: ${(e as Error).message}`, "error");
+			}
+			await refreshBadge(ctx, root);
+			return;
+		}
+
+		// Подкоманды-запросы к графу: ask/grep/callers/skeleton/map/check/blast/config.
+		const USAGE = "Команды: /graft <cmd> или /graft:<cmd> — ask <запрос> · grep <regex> · callers <символ> [in|out] · skeleton <file> · map · check · blast [base] · config [show] · stats · build [deep]";
+		if (!root) {
+			ctx.ui.notify("Нет графа (graft/ не найден выше cwd) — сначала `/graft build` в корне репо.", "error");
+			return;
+		}
+		const q = makeQueries(root);
+		const out = (t: string): void => { mapCache = null; ctx.ui.notify(cap(t, maxOut(root)), "info"); };
+		try {
+			switch (cmd) {
+				case "ask": if (!restArg) throw new Error("использование: /graft ask <запрос>"); out(q.ask(restArg, { source: true })); break;
+				case "grep": if (!restArg) throw new Error("использование: /graft grep <regex>"); out(q.grep(restArg)); break;
+				case "callers": if (!restArg) throw new Error("использование: /graft callers <символ> [in|out]"); out(q.callers(rest[0], { direction: rest[1] === "in" || rest[1] === "out" ? rest[1] : undefined })); break;
+				case "skeleton": if (!restArg) throw new Error("использование: /graft skeleton <file>"); out(q.skeleton(restArg)); break;
+				case "map": out(q.map()); break;
+				case "check": out((await q.check()).text); break;
+				case "blast": out(await q.blast(restArg || undefined)); break;
+				case "config": if (restArg && restArg !== "show") throw new Error("поддерживается: /graft config show (настройка — через CLI `graft config set`)"); { const c = resolveDeepConfig(root).config; out(c ? `LLM: ${c.model} @ ${c.baseUrl} (apiKey: ${c.apiKey ? "задан" : "нет"})` : "LLM-конфиг не задан (CLI: `graft config set --base-url … --model …`)"); } break;
+				default: throw new Error("неизвестная команда. " + USAGE);
+			}
+		} catch (e) {
+			ctx.ui.notify(`graft ${cmd}: ${(e as Error).message}`, "error");
+		}
+	};
 
 	pi.registerCommand("graft", {
-		description: "Graft: /graft — сводка; ask|grep|callers|skeleton|map|check|blast — запросы к графу; stats — экономия; build [deep] — пересобрать; config show — LLM-конфиг",
+		description: "Graft: /graft — сводка; /graft <cmd> — подкоманда (ask|grep|callers|skeleton|map|check|blast|config|stats|build); отдельные: /graft:build, /graft:ask, …",
 		handler: async (args: string, ctx) => {
 			const root = rootOf(ctx);
 			const parts: string[] = [`Graft: pi-graft-engine (engine, свой движок)`];
@@ -648,76 +717,33 @@ export default function graftExtension(pi: ExtensionAPI) {
 			if (w7.calls > 0) parts.push(`Сводка за 7 дней: ${w7.calls} вызовов, ≈${fmtTok(w7.tokens)} токенов (подробно: /graft stats)`);
 
 			const arg = args.trim();
-			const [cmd, ...rest] = arg.split(/\s+/);
-			const restArg = rest.join(" ");
-			if (arg === "stats" || arg.startsWith("stats ")) {
-				const lines: string[] = [];
-				statsReport(lines);
-				ctx.ui.notify(lines.join("\n"), "info");
-				return;
-			}
-			if (arg.startsWith("build")) {
-				const withDeep = arg.includes("deep");
-				const deepCfg = withDeep ? resolveDeepConfig(root ?? ctx.cwd).config : undefined;
-				if (withDeep && !deepCfg) {
-					ctx.ui.notify(
-						"graft build deep: нет конфига LLM. Задайте через `graft config set --base-url … --model …` (или env GRFT_LLM_BASE_URL/GRFT_LLM_MODEL) и повторите.",
-						"error",
-					);
-					return;
-				}
-				ctx.ui.notify(
-					`Запускаю: graft build${withDeep ? " deep" : ""}… (${withDeep ? `LLM ${deepCfg!.model}` : "$0, tree-sitter-wasm"})`,
-					"info",
-				);
-				try {
-					const t0 = Date.now();
-					const rep = await build(root ?? ctx.cwd, {
-						deep: deepCfg ?? undefined,
-						onProgress: (m) => ctx.ui.notify(`graft build: ${m}`, "info"),
-					});
-					mapCache = null;
-					ctx.ui.notify(
-						`graft build готов за ${((Date.now() - t0) / 1000).toFixed(1)}s: ${rep.files} файлов, ${rep.nodes} узлов, ${rep.edges} рёбер` +
-							(rep.deep ? `, deep: +${rep.deep.filesDone}+${rep.deep.symbolsDone}, кэш ${rep.deep.filesCached}+${rep.deep.symbolsCached}, ошибок ${rep.deep.symbolsFailed}` : ""),
-						"info",
-					);
-				} catch (e) {
-					ctx.ui.notify(`graft build: ${(e as Error).message}`, "error");
-				}
-				await refreshBadge(ctx, root);
-				return;
-			}
-
-			// Подкоманды-запросы к графу: ask/grep/callers/skeleton/map/check/blast/config.
-			const USAGE = "Команды: /graft ask <запрос> · grep <regex> · callers <символ> [in|out] · skeleton <file> · map · check · blast [base] · config show · stats · build [deep]";
 			if (arg) {
-				if (!root) {
-					ctx.ui.notify("Нет графа (graft/ не найден выше cwd) — сначала `/graft build` в корне репо.", "error");
-					return;
-				}
-				const q = makeQueries(root);
-				const out = (t: string): void => { mapCache = null; ctx.ui.notify(cap(t, maxOut(root)), "info"); };
-				try {
-					switch (cmd) {
-						case "ask": if (!restArg) throw new Error("использование: /graft ask <запрос>"); out(q.ask(restArg, { source: true })); break;
-						case "grep": if (!restArg) throw new Error("использование: /graft grep <regex>"); out(q.grep(restArg)); break;
-						case "callers": if (!restArg) throw new Error("использование: /graft callers <символ> [in|out]"); out(q.callers(rest[0], { direction: rest[1] === "in" || rest[1] === "out" ? rest[1] : undefined })); break;
-						case "skeleton": if (!restArg) throw new Error("использование: /graft skeleton <file>"); out(q.skeleton(restArg)); break;
-						case "map": out(q.map()); break;
-						case "check": out((await q.check()).text); break;
-						case "blast": out(await q.blast(restArg || undefined)); break;
-						case "config": if (restArg !== "show") throw new Error("пока поддерживается: /graft config show (настройка — через CLI `graft config set`)"); { const c = resolveDeepConfig(root).config; out(c ? `LLM: ${c.model} @ ${c.baseUrl} (apiKey: ${c.apiKey ? "задан" : "нет"})` : "LLM-конфиг не задан (CLI: `graft config set --base-url … --model …`)"); } break;
-						default: throw new Error("неизвестная команда. " + USAGE);
-					}
-				} catch (e) {
-					ctx.ui.notify(`graft ${cmd}: ${(e as Error).message}`, "error");
-				}
+				await runGraftCmd(arg, ctx);
 				return;
 			}
 
 			ctx.ui.notify(parts.join("\n"), "info");
 		},
 	});
+
+	// Отдельные команды /graft:* (стиль om:*) — тот же деспатч.
+	const GRAFT_SUBCOMMANDS: Array<[string, string, string]> = [
+		["graft:build", "build", "Пересобрать граф: /graft:build [deep]"],
+		["graft:ask", "ask", "Поиск по графу: /graft:ask <запрос>"],
+		["graft:grep", "grep", "Regex-поиск по индексированным файлам: /graft:grep <regex>"],
+		["graft:callers", "callers", "Зависимости символа: /graft:callers <символ> [in|out]"],
+		["graft:skeleton", "skeleton", "Сигнатуры файла: /graft:skeleton <file>"],
+		["graft:map", "map", "Ориентация в репо: /graft:map"],
+		["graft:check", "check", "Свежесть графа: /graft:check"],
+		["graft:blast", "blast", "Blast radius git-диффа: /graft:blast [base]"],
+		["graft:config", "config", "LLM-конфиг: /graft:config [show]"],
+		["graft:stats", "stats", "Сводка экономии: /graft:stats"],
+	];
+	for (const [name, cmd, desc] of GRAFT_SUBCOMMANDS) {
+		pi.registerCommand(name, {
+			description: desc,
+			handler: (args: string, ctx) => runGraftCmd(`${cmd}${args.trim() ? ` ${args.trim()}` : ""}`, ctx),
+		});
+	}
 
 }
