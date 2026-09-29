@@ -232,7 +232,7 @@ switch (cmd) {
 		break;
 	}
 	case "blast": {
-		const base = positionals()[0];
+		const base = positionals()[0] ?? optVal("--base");
 		await engine.ensureFresh(root);
 		const q = engine.makeQueries(root);
 		const format = optVal("--format") ?? "text";
