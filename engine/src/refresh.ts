@@ -29,8 +29,22 @@ export function fpPath(root: string): string {
 
 /** Записать fingerprint после build (из index.build). */
 export async function writeFingerprint(root: string, paths: string[], hashes: Record<string, string>): Promise<void> {
+	const useHash = effectiveRuntime(root).useHash;
 	const files: Fingerprint["files"] = {};
 	for (const p of paths) {
+		if (useHash) {
+			const stored = hashes[p];
+			if (typeof stored === "string" && stored.length > 0) {
+				files[p] = stored;
+				continue;
+			}
+			try {
+				files[p] = sha1(readFileSync(join(root, p), "utf8"));
+			} catch {
+				/* файл исчез — просто нет записи */
+			}
+			continue;
+		}
 		try {
 			const st = await stat(join(root, p));
 			files[p] = { size: st.size, mtimeMs: st.mtimeMs };
@@ -38,8 +52,7 @@ export async function writeFingerprint(root: string, paths: string[], hashes: Re
 			/* файл исчез — просто нет записи */
 		}
 	}
-	const fp: Fingerprint = { mode: "stat", paths, files };
-	void hashes;
+	const fp: Fingerprint = { mode: useHash ? "hash" : "stat", paths, files };
 	mkdirSync(engineDir(root), { recursive: true });
 	writeFileSync(fpPath(root), JSON.stringify(fp, null, 0));
 }

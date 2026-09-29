@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeSavings } from "./savings.js";
 import { readDeep, readGraph } from "./store.js";
-import { langOf, listRepoPaths } from "./scan.js";
+import { isIndexablePath, listRepoPaths, readBuildConfig } from "./scan.js";
 import type { Graph, GraphNode } from "./types.js";
 
 /** Лексическая релевантность: доля ключевых слов запроса, найденных в текстах. */
@@ -407,16 +407,18 @@ export function makeQueries(root: string): Queries {
 	const check = async () => {
 		const { createHash } = await import("node:crypto");
 		const h = (s: string) => createHash("sha1").update(s).digest("hex");
-		const list = await listRepoPaths(root);
+		const list = await listRepoPaths(root, readBuildConfig(root).followSubmodules);
 		const current = new Map<string, string>();
 		for (const p of list) {
-			if (!langOf(p)) continue;
-			if (/(^|\/)(node_modules|\.git|dist|build|out|\.memory)(\/|$)/.test(p) || p === "graft" || p.startsWith("graft/")) continue;
+			if (!isIndexablePath(p)) continue; // тот же фильтр, что в scanRepo (build)
+			let content: string;
 			try {
-				current.set(p, h(readFileSync(join(root, p), "utf8")));
+				content = readFileSync(join(root, p), "utf8");
 			} catch {
-				/* пропуск */
+				continue; /* пропуск */
 			}
+			if (content.length > 400_000) continue; // аномально большой — как в scanRepo
+			current.set(p, h(content));
 		}
 		const indexed = new Map(g.meta.files.map((f) => [f.path, f.hash]));
 		const added: string[] = [];
