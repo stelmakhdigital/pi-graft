@@ -884,6 +884,22 @@ await check("C8: viz serve (HTTP /api/graph + live-reload)", async () => {
 });
 
 // ── Регресс: P0-P3 фиксы сессии (реальные баги, ловились вручную) ──
+await check("regression: lsp findNodeAtLine — LSP 0-based строка vs 1-based span", async () => {
+	const { findNodeAtLine } = jiti("../engine/src/lsp.ts");
+	const nodes = [
+		{ id: "file", span: { start: 1, end: 5 } },
+		{ id: "fn-top", span: { start: 5, end: 5 } }, // top-level one-liner на строке 5 (1-based)
+		{ id: "cls", span: { start: 10, end: 20 } },
+		{ id: "method", span: { start: 12, end: 13 } },
+	];
+	assert(findNodeAtLine(nodes, 4) === "fn-top", "top-level: LSP line 4 = строка 5");
+	assert(findNodeAtLine(nodes, 10) === "cls", "внутри класса, строка 11 (0-based 10) — класс");
+	assert(findNodeAtLine(nodes, 11) === "method", "строка 12 (0-based 11) — метод (exact)");
+	assert(findNodeAtLine(nodes, 9) === "cls" || findNodeAtLine(nodes, 9) === null, "строка вне символов");
+	assert(findNodeAtLine(nodes, -1) === null, "line -1 → null");
+	assert(findNodeAtLine([], 3) === null, "пусто → null");
+});
+
 await check("regression: resolveImport сворачивает .. (вложенные relative-импорты)", () => {
 	const { resolveImport } = jiti("../engine/src/extract.ts");
 	assert(resolveImport("src/deep/mod.ts", "../utils", new Set(["src/utils.ts"])) === "src/utils.ts", "один уровень вверх");

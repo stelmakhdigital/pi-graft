@@ -228,7 +228,7 @@ async function lspResolveLang(root: string, def: LspServerDef, lang: string, lis
 	return added;
 }
 
-function findNodeAtLine(nodes: Array<{ id: string; span: { start: number; end: number } }>, line: number): string | null {
+export function findNodeAtLine(nodes: Array<{ id: string; span: { start: number; end: number } }>, line: number): string | null {
 	if (line < 0) return null;
 	const l = line + 1; // LSP 0-based → span 1-based (extract: startPosition.row + 1)
 	const exact = nodes.filter((n) => n.span.start === l);
