@@ -60,7 +60,7 @@ const noUiCtx = {
 	function makePi2() {
 		const base = makePi();
 		base.getFlag = (name) => {
-			const f = base.flags.find((x) => x.name === name.replace(/^--/, ""));
+			const f = base.flags.find((x) => x.name === name); // реальный pi: без нормализации префикса
 			return f ? f.default : false;
 		};
 		return base;
@@ -185,8 +185,8 @@ const noUiCtx = {
 	const makePiFlags = (overrides) => {
 		const base = makePi();
 		base.getFlag = (name) => {
-			const f = base.flags.find((x) => x.name === name.replace(/^--/, ""));
-			return overrides[name] ?? (f ? f.default : false);
+			const f = base.flags.find((x) => x.name === name); // реальный pi: без нормализации префикса
+			return overrides["--" + name] ?? overrides[name] ?? (f ? f.default : false);
 		};
 		return base;
 	};

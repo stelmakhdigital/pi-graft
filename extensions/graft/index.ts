@@ -93,7 +93,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 	let lastEditedPath: string | null = null;
 
 	function enabled(ctx: ExtensionContext): boolean {
-		if (pi.getFlag("--graft") === false) return false;
+		if (pi.getFlag("graft") === false) return false;
 		return findGraphRoot(ctx.cwd) !== null;
 	}
 
@@ -104,7 +104,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 	/** Лимит вывода: флаг --graft-max-output (если не дефолт) → env GRFT_MAX_OUTPUT →
 	 *  project-конфиг (graft config set --max-output) → 16000. */
 	function maxOut(root: string | null = null): number {
-		const flag = pi.getFlag("--graft-max-output");
+		const flag = pi.getFlag("graft-max-output");
 		if (flag != null && String(flag) !== "16000") return Number(flag) || 16000;
 		return effectiveRuntime(root ?? undefined).maxOutput ?? 16000;
 	}
@@ -493,8 +493,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!enabled(ctx)) return;
-		const wantMap = pi.getFlag("--graft-map") !== false;
-		const wantPush = pi.getFlag("--graft-push") === true;
+		const wantMap = pi.getFlag("graft-map") !== false;
+		const wantPush = pi.getFlag("graft-push") === true;
 		if (!wantMap && !wantPush) return;
 		const root = rootOf(ctx);
 		if (!root) return;
@@ -566,7 +566,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			return;
 		}
 		if (event.toolName !== "write" && event.toolName !== "edit") return;
-		if (pi.getFlag("--graft-blast") === false) return;
+		if (pi.getFlag("graft-blast") === false) return;
 		const path = event.input?.path;
 		if (typeof path !== "string" || path.length === 0) return;
 		const root = rootOf(ctx);
@@ -578,7 +578,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 		if (note && ctx.hasUI) ctx.ui.notify(note, "info");
 
 		// Auto-rebuild: тихая пересборка после правки (дебаунс в enableAutoRebuild).
-		if (pi.getFlag("--graft-auto-rebuild") !== false) {
+		if (pi.getFlag("graft-auto-rebuild") !== false) {
 			setSyncingBadge(ctx);
 			enableAutoRebuild(() => build(root, {}).then(() => refreshBadge(ctx, root)), 4000, root);
 		}
@@ -610,7 +610,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!enabled(ctx)) return;
 		const root = rootOf(ctx);
-		if (!root || pi.getFlag("--graft-auto-rebuild") === false || bgSyncRunning) return;
+		if (!root || pi.getFlag("graft-auto-rebuild") === false || bgSyncRunning) return;
 		bgSyncRunning = true;
 		void ensureFresh(root)
 			.then(() => refreshBadge(ctx, root))
@@ -709,7 +709,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			} else {
 				parts.push("Граф: не найден (запусти `/graft build` в корне репо)");
 			}
-			parts.push(`Флаги: map=${pi.getFlag("--graft-map") !== false} push=${pi.getFlag("--graft-push") === true} blast=${pi.getFlag("--graft-blast") === true}`);
+			parts.push(`Флаги: map=${pi.getFlag("graft-map") !== false} push=${pi.getFlag("graft-push") === true} blast=${pi.getFlag("graft-blast") === true}`);
 			const m = readMetrics(ctx);
 			if (m) parts.push(`Сессия: ${m.calls} вызовов graft-тулов, ≈${fmtTok(m.tokens)} токенов сэкономлено (метрика на диске, ~/.local/state/pi-graft).`);
 
