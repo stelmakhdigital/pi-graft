@@ -668,8 +668,14 @@ export function resolveImport(fromPath: string, specifier: string, knownPaths: S
 	if (!specifier.startsWith(".")) return null;
 	const base = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
 	const raw = (base ? base + "/" : "") + specifier;
-	// Нормализация: убрать "./" и "."-сегменты.
-	const norm = raw.split("/").filter((seg) => seg && seg !== ".").join("/");
+	// Нормализация: сворачивание "/./" и "/../" сегментов.
+	const segs: string[] = [];
+	for (const seg of raw.split("/")) {
+		if (!seg || seg === ".") continue;
+		if (seg === "..") segs.pop();
+		else segs.push(seg);
+	}
+	const norm = segs.join("/");
 	const candidates: string[] = [norm];
 	// ESM/TS-конвенция: "./x.js" в TS-исходнике может указывать на x.ts.
 	if (norm.endsWith(".js")) candidates.push(norm.slice(0, -3) + ".ts", norm.slice(0, -3) + ".tsx");
