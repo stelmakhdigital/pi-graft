@@ -18,7 +18,7 @@
  * Активно только в репозиториях с построенным графом (graft/.engine/graph.json).
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
@@ -90,7 +90,10 @@ export default function graftExtension(pi: ExtensionAPI) {
 	function freshTimeoutMs(root: string | null): number {
 		return effectiveRuntime(root ?? undefined).refreshTimeoutMs;
 	}
-	let lastEditedPath: string | null = null;
+
+	/** Session id из ctx (для сессионных ключей в globalThis). */
+	const sidOf = (ctx?: ExtensionContext): string =>
+		(ctx?.sessionManager as { getSessionId?: () => string } | undefined)?.getSessionId?.() ?? "default";
 
 	function enabled(ctx: ExtensionContext): boolean {
 		if (pi.getFlag("graft") === false) return false;
@@ -105,7 +108,10 @@ export default function graftExtension(pi: ExtensionAPI) {
 	 *  project-конфиг (graft config set --max-output) → 16000. */
 	function maxOut(root: string | null = null): number {
 		const flag = pi.getFlag("graft-max-output");
-		if (flag != null && String(flag) !== "16000") return Number(flag) || 16000;
+		if (flag != null && String(flag) !== "16000") {
+			const n = Number(flag);
+			return Number.isFinite(n) && n > 0 ? n : 16000; // «0»/мусор/отрицательное — фолбэк, не нарезка вывода
+		}
 		return effectiveRuntime(root ?? undefined).maxOutput ?? 16000;
 	}
 
@@ -127,7 +133,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 			}
 			const cov = Math.round(deepCoverage(root) * 100);
 			const deepPart = cov > 0 ? ` · ${cov}% deep` : "";
-			const savedPart = savingsSession.tokens > 0 ? ` · ≈${fmtTok(savingsSession.tokens)} tok saved` : "";
+			const saved = savingsFor(ctx);
+			const savedPart = saved.tokens > 0 ? ` · ≈${fmtTok(saved.tokens)} tok saved` : "";
 			if (!st.ok) ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("warning", `graft: ⚠ ${st.stale} stale${st.added ? ` +${st.added} new` : ""}${deepPart}${savedPart}`));
 			else ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `graft: synced${deepPart}${savedPart}`));
 		} catch {
@@ -137,12 +144,16 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 	/** Сессионный накопитель «tokens saved» (строка [graft] tokens saved ≈ в выводах тулов). */
 	interface SavingsSession { tokens: number; calls: number }
-	const savingsSession: SavingsSession = ((globalThis as Record<string, unknown>).__graftSavings as SavingsSession | undefined) ??= { tokens: 0, calls: 0 };
+	const savingsFor = (ctx?: ExtensionContext): SavingsSession => {
+		const g = globalThis as Record<string, unknown>;
+		return (g[`__graftSavings_${sidOf(ctx)}`] as SavingsSession | undefined) ??= { tokens: 0, calls: 0 };
+	};
 	const recordSavings = (out: string, ctx?: ExtensionContext): void => {
 		const m = /\[graft\] tokens saved ≈ ([\d,]+)/.exec(out);
 		if (m) {
-			savingsSession.tokens += parseInt(m[1].replace(/,/g, ""), 10);
-			savingsSession.calls++;
+			const s = savingsFor(ctx);
+			s.tokens += parseInt(m[1].replace(/,/g, ""), 10);
+			s.calls++;
 			if (ctx) trackMetrics(ctx, { tokens: parseInt(m[1].replace(/,/g, ""), 10) });
 		}
 	};
@@ -185,7 +196,9 @@ export default function graftExtension(pi: ExtensionAPI) {
 			m.sourceTokens += patch.sourceTokens ?? 0;
 			m.ts = Date.now();
 			mkdirSync(dirname(p), { recursive: true });
-			writeFileSync(p, JSON.stringify(m));
+			const tmp = p + ".tmp"; // атомарно: tmp+rename — обрыв не роняет метрики
+			writeFileSync(tmp, JSON.stringify(m));
+			renameSync(tmp, p);
 		} catch {
 			// тихо
 		}
@@ -481,20 +494,21 @@ export default function graftExtension(pi: ExtensionAPI) {
 		const STRONG_FLOOR = 0.3;
 		const HIGH_FLOOR = 0.5;
 		if (strong < STRONG_FLOOR && broad < HIGH_FLOOR) {
-			const nudged: boolean = ((globalThis as Record<string, unknown>).__graftPushNudged as boolean | undefined) ?? false;
-			(globalThis as Record<string, unknown>).__graftPushNudged = true;
-			if (nudged) return null;
+			const g = globalThis as Record<string, unknown>;
+			const nk = `__graftPushNudged_${sidOf(ctx)}`;
+			if (g[nk]) return null; // нудж — один раз на сессию
+			g[nk] = true;
 			return `## Граф не дал сильного совпадения по этому промпту — если нужен код, начни с graft_ask «задача» (детерминированный поиск).`;
 		}
 		const inScope = scopeFiles ? results.filter((r) => scopeFiles.has(r.path)) : results;
-		const seen: Set<string> = ((globalThis as Record<string, unknown>).__graftPushSeen as Set<string> | undefined) ?? new Set<string>();
-		(globalThis as Record<string, unknown>).__graftPushSeen = seen;
+		const g = globalThis as Record<string, unknown>;
+		const seen: Set<string> = (g[`__graftPushSeen_${sidOf(ctx)}`] as Set<string> | undefined) ?? new Set<string>();
+		g[`__graftPushSeen_${sidOf(ctx)}`] = seen;
 		const idOf = (r: { path: string; name: string; start: number }): string => `${r.path}#${r.name}@L${r.start}`;
 		const fresh = inScope.filter((r) => !seen.has(idOf(r)));
 		if (fresh.length === 0) return null;
 		for (const r of fresh) {
-			seen.add(idOf(r));
-			if (seen.size > 400) seen.clear();
+			if (seen.size <= 4000) seen.add(idOf(r)); // кап без clear(): старые указатели не переинжектим
 		}
 		// Формат: указатели без кода (топ-3) — свежая инъекция стоит full-price на каждый
 		// промпт; код модель заберёт сама через graft_ask, когда укажатель зацепит.
@@ -584,22 +598,21 @@ export default function graftExtension(pi: ExtensionAPI) {
 			return;
 		}
 		if (event.toolName !== "write" && event.toolName !== "edit") return;
-		if (pi.getFlag("graft-blast") === false) return;
 		const path = event.input?.path;
 		if (typeof path !== "string" || path.length === 0) return;
 		const root = rootOf(ctx);
 		if (!root) return;
 
-		mapCache = null;
-		const blast = blastFileText(root, path);
-		const note = blast ? `🌿 Graft blast radius по ${path}:\n${blast}` : "";
-		if (note && ctx.hasUI) ctx.ui.notify(note, "info");
-
+		mapCache = null; // инвалидация — вне blast-флага: карта не должна жить через правку
 		// Auto-rebuild: тихая пересборка после правки (дебаунс в enableAutoRebuild).
 		if (pi.getFlag("graft-auto-rebuild") !== false) {
 			setSyncingBadge(ctx);
 			enableAutoRebuild(() => build(root, {}).then(() => refreshBadge(ctx, root)), 4000, root);
 		}
+		if (pi.getFlag("graft-blast") === false) return;
+		const blast = blastFileText(root, path);
+		const note = blast ? `🌿 Graft blast radius по ${path}:\n${blast}` : "";
+		if (note && ctx.hasUI) ctx.ui.notify(note, "info");
 		return note ? { content: [...event.content, { type: "text", text: note }] } : undefined;
 	});
 	// Compliance: в ходе были graft-тулы с экономией — счётчики tally; нет «🌱» → напомнить в след. секции.

@@ -47,6 +47,18 @@ function optVal(name) {
 	const i = rest.indexOf(name);
 	return i >= 0 ? rest[i + 1] : undefined;
 }
+// Позиционные аргументы: без флагов и значений флагов-приёмников ("--dir somedir" не даёт "somedir").
+const VALUE_FLAGS = new Set(["--dir", "--in", "--scope", "-d", "--depth", "-n", "--max-dirs", "--format", "--base"]);
+function positionals() {
+	const out = [];
+	let skip = false;
+	for (const a of rest) {
+		if (skip) { skip = false; continue; }
+		if (a.startsWith("-")) { skip = VALUE_FLAGS.has(a); continue; }
+		out.push(a);
+	}
+	return out;
+}
 
 function deepConfig() {
 	const soft = deepConfigSoft();
@@ -59,8 +71,6 @@ function deepConfig() {
 function deepConfigSoft() {
 	return engine.resolveDeepConfig(root).config;
 }
-
-const dirArg = (a) => (a && !a.startsWith("-") && ["ask", "grep", "callers", "skeleton"].includes(cmd) ? a : undefined);
 
 function renderBlastMarkdown(data, base) {
 	const lines = [`## Blast radius${base ? ` — \`${base}\`` : " — working tree"}`];
@@ -118,7 +128,7 @@ switch (cmd) {
 		break;
 	}
 	case "ask": {
-		const query = rest.find((a) => !a.startsWith("-"));
+		const query = positionals()[0];
 		if (!query) throw new Error("usage: graft ask <query> [--source] [--in <scope>] [-n N] [--json]");
 		await engine.ensureFresh(root);
 		const q = engine.makeQueries(root);
@@ -129,7 +139,7 @@ switch (cmd) {
 		break;
 	}
 	case "grep": {
-		const pattern = rest.find((a) => !a.startsWith("-"));
+		const pattern = positionals()[0];
 		if (!pattern) throw new Error("usage: graft grep <pattern>");
 		await engine.ensureFresh(root);
 		const q = engine.makeQueries(root);
@@ -137,7 +147,7 @@ switch (cmd) {
 		break;
 	}
 	case "callers": {
-		const symbol = rest.find((a) => !a.startsWith("-"));
+		const symbol = positionals()[0];
 		if (!symbol) throw new Error("usage: graft callers <symbol>");
 		await engine.ensureFresh(root);
 		const q = engine.makeQueries(root);
@@ -147,7 +157,7 @@ switch (cmd) {
 		break;
 	}
 	case "skeleton": {
-		const file = rest.find((a) => !a.startsWith("-"));
+		const file = positionals()[0];
 		if (!file) throw new Error("usage: graft skeleton <file>");
 		await engine.ensureFresh(root);
 		console.log(engine.makeQueries(root).skeleton(file));

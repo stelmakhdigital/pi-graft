@@ -122,7 +122,7 @@ export function writeCards(root: string, g: Graph, deep: DeepStore): number {
 				const p = join(dir, ent.name);
 				if (ent.isDirectory()) walk(p);
 				else if (ent.name.endsWith(".md")) {
-					const rel = relative(cardsRoot, p).slice(0, -3);
+					const rel = relative(cardsRoot, p).split(sep).join("/").slice(0, -3);
 					const n = extractNotes(readFileSync(p, "utf8"));
 					if (n) notes[rel] = n;
 				}

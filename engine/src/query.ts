@@ -1,7 +1,7 @@
 /** Запросы к графу: skeleton/callers/map/ask/grep/check/blast. */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { makeSavings } from "./savings.js";
 import { readDeepCached, readGraphCached } from "./store.js";
 import { isIndexablePath, listRepoPaths, readBuildConfig } from "./scan.js";
@@ -445,7 +445,9 @@ export function makeQueries(root: string): Queries {
 	};
 
 	const blastFile: Queries["blastFile"] = (path) => {
-		const target = g.nodes.find((n) => n.kind === "file" && (n.path === path || n.path.endsWith(path)));
+		const norm = path.replace(/\\/g, "/");
+		const rel = norm.startsWith("/") ? (relative(root, norm) ?? norm) : norm; // абсолютенный путь тула → отн. к корню
+		const target = g.nodes.find((n) => n.kind === "file" && (n.path === rel || n.path.endsWith(rel)));
 		if (!target) return "";
 		const syms = g.nodes.filter((n) => n.path === target.path && n.kind !== "file");
 		const lines: string[] = [];
