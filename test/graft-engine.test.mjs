@@ -883,6 +883,77 @@ await check("C8: viz serve (HTTP /api/graph + live-reload)", async () => {
 	assert(html.includes("live-reload") && html.includes("api/graph"), "html + reload-скрипт");
 });
 
+// ── Регресс: P0-P3 фиксы сессии (реальные баги, ловились вручную) ──
+await check("regression: resolveImport сворачивает .. (вложенные relative-импорты)", () => {
+	const { resolveImport } = jiti("../engine/src/extract.ts");
+	assert(resolveImport("src/deep/mod.ts", "../utils", new Set(["src/utils.ts"])) === "src/utils.ts", "один уровень вверх");
+	assert(resolveImport("a/b/c/mod.ts", "../../lib/util", new Set(["a/lib/util.ts"])) === "a/lib/util.ts", "два уровня вверх");
+	assert(resolveImport("mod.ts", "./utils", new Set(["utils.ts"])) === "utils.ts", "точка");
+	assert(resolveImport("mod.ts", "../../x", new Set(["x.ts"])) === "x.ts", "выход за корень ограничивается корнем");
+	assert(resolveImport("mod.ts", "../нет-такого", new Set(["x.ts"])) === null, "нерезолвимо → null");
+});
+
+await check("regression: drift игнорирует файлы, которые build не индексирует (isIndexablePath)", async () => {
+	const r2 = mkdtempSync(join(tmpdir(), "ge-reg-drift-"));
+	execFileSync("git", ["init", "-q", "."], { cwd: r2 });
+	writeFileSync(join(r2, "src.ts"), "export function a() { return 1; }\n");
+	await engine.build(r2, {});
+	mkdirSync(join(r2, "__pycache__"), { recursive: true });
+	writeFileSync(join(r2, "__pycache__/m.py"), "x = 1\n");       // SKIP_RE
+	writeFileSync(join(r2, "vendor.min.js"), "minified\n");        // .min.js
+	writeFileSync(join(r2, "big.ts"), "export const x = " + "1".repeat(450_000) + ";\n"); // >400KB
+	const dr = await engine.driftReport(r2);
+	assert(!dr.drifted, `ложный дрейф от исключённых файлов: ${JSON.stringify(dr)}`);
+	rmSync(r2, { recursive: true, force: true });
+});
+
+await check("regression: GRFT_REFRESH=hash — touch (mtime-only) не rebuild'ит, смена контента — да", async () => {
+	const r3 = mkdtempSync(join(tmpdir(), "ge-reg-hash-"));
+	execFileSync("git", ["init", "-q", "."], { cwd: r3 });
+	const p3 = join(r3, "m.ts");
+	writeFileSync(p3, "export function f() { return 1; }\n");
+	process.env.GRFT_REFRESH = "hash";
+	try {
+		await engine.build(r3, {});
+		execFileSync("touch", [p3]); // только mtime
+		let dr = await engine.driftReport(r3);
+		assert(!dr.drifted, `mtime-only изменение детекнуто как дрейф: ${JSON.stringify(dr)}`);
+		writeFileSync(p3, "export function f() { return 2; }\n");
+		dr = await engine.driftReport(r3);
+		assert(dr.drifted && dr.changed >= 1, `смена контента не детекнута: ${JSON.stringify(dr)}`);
+	} finally {
+		delete process.env.GRFT_REFRESH;
+	}
+	rmSync(r3, { recursive: true, force: true });
+});
+
+await check("regression: blast — чистый вставочный ханк @@ -n,0 +m @@ атрибутируется символу", async () => {
+	const r4 = mkdtempSync(join(tmpdir(), "ge-reg-blast-"));
+	execFileSync("git", ["init", "-q", "."], { cwd: r4 });
+	const pf = join(r4, "core.ts");
+	writeFileSync(pf, "export function core() {\n  const a = 1;\n  const b = 2;\n  return a + b;\n}\nexport function user() { return core(); }\n");
+	await engine.build(r4, {});
+	execFileSync("git", ["add", "-A"], { cwd: r4 });
+	const lines = readFileSync(pf, "utf8").split("\n");
+	lines.splice(2, 0, "  const c = 3;"); // вставка ВНУТРИ core
+	writeFileSync(pf, lines.join("\n"));
+	const out = await engine.makeQueries(r4).blast();
+	assert(/core \(core\.ts/.test(out) && out.includes("user"), `blast не атрибутировал вставку: ${out}`);
+	rmSync(r4, { recursive: true, force: true });
+});
+
+await check("regression: не-ASCII (кириллические) имена файлов индексируются (quotepath)", async () => {
+	const r5 = mkdtempSync(join(tmpdir(), "ge-reg-cyr-"));
+	execFileSync("git", ["init", "-q", "."], { cwd: r5 });
+	mkdirSync(join(r5, "src"), { recursive: true });
+	writeFileSync(join(r5, "src/кириллица.ts"), "export function гр() { return 7; }\nexport function гб() { return гр(); }\n");
+	await engine.build(r5, {});
+	const g = engine.readGraph(r5);
+	const paths = g.meta.files.map((f) => f.path);
+	assert(paths.includes("src/кириллица.ts"), `файл не в графе: ${JSON.stringify(paths)}`);
+	rmSync(r5, { recursive: true, force: true });
+});
+
 server.close();
 rmSync(root, { recursive: true, force: true });
 

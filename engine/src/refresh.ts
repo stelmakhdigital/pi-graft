@@ -86,7 +86,20 @@ async function driftReportInner(
 	const current = list.filter(isIndexablePath);
 	const curSet = new Set(current);
 	const idxSet = new Set(fp.paths);
-	const added = current.filter((p) => !idxSet.has(p)).length;
+	// added: то же правило, что в scanRepo — аномально большие файлы (>400KB контента) не индексим.
+	// size <= 400_000 байт всегда проходит (utf16-length ≤ bytes), читаем только кандидатов > лимита.
+	const addedList: string[] = [];
+	for (const p of current) {
+		if (idxSet.has(p)) continue;
+		try {
+			const st = await stat(join(root, p));
+			if (st.size > 400_000 && readFileSync(join(root, p), "utf8").length > 400_000) continue;
+		} catch {
+			/* нечитаемый — считаем added */
+		}
+		addedList.push(p);
+	}
+	const added = addedList.length;
 	const removed = fp.paths.filter((p) => !curSet.has(p)).length;
 	let changed = 0;
 	for (const p of current) {

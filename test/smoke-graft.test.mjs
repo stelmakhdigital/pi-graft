@@ -86,6 +86,14 @@ const noUiCtx = {
 		const push = pi.flags.find((f) => f.name === "graft-push");
 		if (push.def.default !== true) throw new Error("push должен быть включён по умолчанию (parity с always-on после init)");
 	});
+
+	await check("graft: имена флагов зарегистрированы БЕЗ префикса -- (контракт getFlag)", () => {
+		for (const f of pi.flags) {
+			if (f.name.startsWith("--")) throw new Error("флаг с префиксом: " + f.name);
+		}
+		const known = ["graft", "graft-max-output", "graft-map", "graft-push", "graft-blast", "graft-auto-rebuild"];
+		for (const k of known) if (!pi.flags.some((f) => f.name === k)) throw new Error("нет флага: " + k);
+	});
 	await check("graft: без графа — подсказка о graft build", async () => {
 		const tool = pi.tools.find((t) => t.name === "graft_map");
 		const res = await tool.execute("id", {}, new AbortController().signal, () => {}, ctxNoGraph);
@@ -209,6 +217,16 @@ const noUiCtx = {
 		const sections2 = {};
 		await piPush.handlers.before_agent_start({ prompt: "fix the auth bug in handler", systemPromptOptions: { sections: sections2 } }, ctxGraph);
 		if (sections2.graft && sections2.graft.includes("Указатели графа")) throw new Error("повторный пакет: " + sections2.graft.slice(0, 200));
+	});
+
+	await check("graft --graft=false: все инструменты явно отвечают disabled", async () => {
+		const piOff = makePiFlags({ graft: false });
+		ctxGraft.default(piOff);
+		for (const t of piOff.tools) {
+			const res = await t.execute("id", { query: "auth", path: "a.ts", file: "a.ts", symbol: "auth", pattern: "auth" }, new AbortController().signal, () => {}, ctxGraph);
+			const text = res.content.map((c) => c.text).join(" ");
+			if (!text.includes("отключено")) throw new Error(t.name + ": " + text.slice(0, 120));
+		}
 	});
 
 	await check("graft compliance: turn_end без 🌱 → напоминание в след. секции", async () => {
