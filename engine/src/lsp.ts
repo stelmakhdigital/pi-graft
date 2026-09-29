@@ -205,7 +205,8 @@ async function lspResolveLang(root: string, def: LspServerDef, lang: string, lis
 					if (!loc.uri || !loc.uri.startsWith("file://")) continue;
 					const tFile = rel(decodeURIComponent(loc.uri.slice("file://".length)));
 					const line = loc.range?.start?.line ?? -1;
-					const target = findNodeAtLine(nodeByFile.get(tFile) ?? [], line) ?? tFile;
+					const target = findNodeAtLine(nodeByFile.get(tFile) ?? [], line);
+					if (!target) continue; // цель вне графа (.d.ts и т.п.) — не создавать dangling-указатель
 					const key = `${c.caller}->${target}:calls`;
 					if (existing.has(key) || c.caller === target) continue;
 					existing.add(key);

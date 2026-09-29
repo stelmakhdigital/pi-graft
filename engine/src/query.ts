@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeSavings } from "./savings.js";
-import { readDeep, readGraph } from "./store.js";
+import { readDeepCached, readGraphCached } from "./store.js";
 import { isIndexablePath, listRepoPaths, readBuildConfig } from "./scan.js";
 import type { Graph, GraphNode } from "./types.js";
 
@@ -82,9 +82,9 @@ class SourceCache {
 }
 
 export function makeQueries(root: string): Queries {
-	const g = readGraph(root);
+	const g = readGraphCached(root);
 	const sav = makeSavings(root);
-	const deep = readDeep(root);
+	const deep = readDeepCached(root);
 	const src = new SourceCache(root);
 	const inDegree = new Map<string, number>();
 	const outDegree = new Map<string, number>();
@@ -460,7 +460,7 @@ export function makeQueries(root: string): Queries {
 		new Promise<string>((res) => execFile("git", args, { maxBuffer: 32 * 1024 * 1024 }, (err: Error | null, o: string) => res(err ? "" : o)));
 
 	const blastCore = async (base: string | undefined, owners: boolean): Promise<Awaited<ReturnType<Queries["blastData"]>>> => {
-		const out = await gitRun(["-C", root, "diff", "--unified=0", ...(base ? [base] : [])]);
+		const out = await gitRun(["-C", root, "-c", "core.quotepath=false", "diff", "--unified=0", ...(base ? [base] : [])]);
 		const byFile = new Map<string, Set<number>>();
 		let cur: string | null = null;
 		let newStart = 0;
@@ -471,7 +471,7 @@ export function makeQueries(root: string): Queries {
 				byFile.set(cur, new Set());
 				continue;
 			}
-			const h = line.match(/^@@ -\d+(?:-\d+)? \+(\d+)/);
+			const h = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
 			if (h) newStart = Number(h[1]);
 			if (cur && (line.startsWith("+") || line.startsWith("-")) && line[1] !== "=" && byFile.has(cur)) byFile.get(cur)!.add(newStart);
 		}
@@ -500,7 +500,7 @@ export function makeQueries(root: string): Queries {
 	const blastData: Queries["blastData"] = async (base, opts = {}) => blastCore(base, opts.owners !== false);
 
 	const blast: Queries["blast"] = async (base) => {
-		const args = ["-C", root, "diff", "--unified=0"];
+		const args = ["-C", root, "-c", "core.quotepath=false", "diff", "--unified=0"];
 		if (base) args.push(base);
 		const out = await new Promise<string>((res) => {
 			execFile("git", args, { maxBuffer: 32 * 1024 * 1024 }, (err: Error | null, o: string) => res(err ? "" : o));
@@ -516,7 +516,7 @@ export function makeQueries(root: string): Queries {
 				byFile.set(cur, new Set());
 				continue;
 			}
-			const h = line.match(/^@@ -\d+(?:-\d+)? \+(\d+)/);
+			const h = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
 			if (h) newStart = Number(h[1]);
 			if (cur && (line.startsWith("+") || line.startsWith("-")) && line[1] !== "=" && byFile.has(cur)) byFile.get(cur)!.add(newStart);
 		}

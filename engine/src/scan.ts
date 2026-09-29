@@ -58,7 +58,8 @@ function sha1(s: string): string {
 
 function gitLines(root: string, args: string[]): Promise<string[]> {
 	return new Promise<string[]>((res) => {
-		execFile("git", ["-C", root, "ls-files", ...args], { maxBuffer: 16 * 1024 * 1024 }, (err: Error | null, stdout: string) => {
+		// core.quotepath=false: иначе не-ASCII пути приходят в C-цитировании ("src/\320\272…")
+		execFile("git", ["-C", root, "-c", "core.quotepath=false", "ls-files", ...args], { maxBuffer: 16 * 1024 * 1024 }, (err: Error | null, stdout: string) => {
 			res(err ? [] : stdout.split("\n").map((l) => l.trim()).filter(Boolean));
 		});
 	});

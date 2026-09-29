@@ -18,10 +18,26 @@ export function readGraph(root: string): Graph {
 	return JSON.parse(readFileSync(join(engineDir(root), "graph.json"), "utf8")) as Graph;
 }
 
+// In-process кэш распарсенных артефактов (root-ключ). Инвалидация — в writeGraph/writeDeep
+// (единственные точки записи) и invalidateGraphCache() после rebuild.
+const graphCache = new Map<string, Graph>();
+const deepCache = new Map<string, DeepStore>();
+export function readGraphCached(root: string): Graph {
+	let g = graphCache.get(root);
+	if (!g) {
+		g = readGraph(root);
+		graphCache.set(root, g);
+	}
+	return g;
+}
+export function invalidateGraphCache(root?: string): void {
+	if (root) { graphCache.delete(root); deepCache.delete(root); }
+	else { graphCache.clear(); deepCache.clear(); }
+}
 /** Есть ли уже deep-данные (для auto-refresh: deep.json не пустой). */
 export function hasDeep(root: string): boolean {
 	try {
-		const d = readDeep(root);
+		const d = readDeepCached(root);
 		return Object.keys(d.files ?? {}).length > 0 || Object.keys(d.symbols ?? {}).length > 0;
 	} catch {
 		return false;
@@ -33,6 +49,14 @@ export function readDeep(root: string): DeepStore {
 	if (!existsSync(p)) return { files: {}, symbols: {} };
 	return JSON.parse(readFileSync(p, "utf8")) as DeepStore;
 }
+export function readDeepCached(root: string): DeepStore {
+	let d = deepCache.get(root);
+	if (!d) {
+		d = readDeep(root);
+		deepCache.set(root, d);
+	}
+	return d;
+}
 
 export function writeGraph(root: string, g: Graph): void {
 	const dir = engineDir(root);
@@ -40,6 +64,7 @@ export function writeGraph(root: string, g: Graph): void {
 	// Чистим старый формат (nanonets: graft/wiring.json, карточки по дереву).
 	rmSync(join(root, "graft", "wiring.json"), { force: true });
 	writeFileSync(join(dir, "graph.json"), JSON.stringify(g, null, 1));
+	invalidateGraphCache(root);
 }
 
 const unresolvedPath = (root: string) => join(engineDir(root), "unresolved.json");
@@ -65,6 +90,7 @@ export function readUnresolved(root: string): LspCandidate[] {
 export function writeDeep(root: string, d: DeepStore): void {
 	mkdirSync(engineDir(root), { recursive: true });
 	writeFileSync(join(engineDir(root), "deep.json"), JSON.stringify(d, null, 1));
+	deepCache.delete(root);
 }
 
 const NOTES_BEGIN = "<!-- graft:notes:begin -->";

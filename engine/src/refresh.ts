@@ -66,8 +66,15 @@ function readFp(root: string): Fingerprint | null {
 	}
 }
 
-/** Быстрый (async, но дешёвый) отчёт о дрейфе без пересборки. */
-export async function driftReport(
+/**
+ * Быстрый (async, но дешёвый) отчёт о дрейфе без пересборки.
+ * Без кэша: результат обязан отражать актуальное состояние диска (правки в этом окне легитимны).
+ */
+export async function driftReport(root: string): Promise<Awaited<ReturnType<typeof driftReportInner>>> {
+	return driftReportInner(root);
+}
+
+async function driftReportInner(
 	root: string,
 ): Promise<{ drifted: boolean; reason: string | null; added: number; removed: number; changed: number }> {
 	if (!hasGraph(root)) return { drifted: false, reason: "нет графа", added: 0, removed: 0, changed: 0 };
@@ -158,9 +165,9 @@ export async function ensureFresh(
 	opts: { timeoutMs?: number } = {},
 ): Promise<{ refreshed: boolean; stale?: boolean; files?: number; skipped?: string; reason?: string }> {
 	if (effectiveRuntime(root).noRefresh) return { refreshed: false, skipped: "no-refresh (env GRFT_NO_REFRESH или конфиг)" };
+	if (rebuildInflight.has(root)) return { refreshed: false, reason: "rebuild уже идёт (фоновый)" }; // дёшево: без git-спавна
 	const dr = await driftReport(root);
 	if (!dr.drifted) return { refreshed: false, reason: dr.reason ?? undefined };
-	if (rebuildInflight.has(root)) return { refreshed: false, reason: "rebuild уже идёт (фоновый)" };
 	const { build } = await import("./index.js");
 	const job = (async (): Promise<number> => {
 		try {
