@@ -262,12 +262,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 					const fr = await ensureFresh(root, { timeoutMs: freshTimeoutMs(root) });
 					if (fr.stale) setSyncingBadge(ctx);
 				})();
-				let out = makeQueries(root).ask(params.query, { source: params.source });
+				const out = makeQueries(root).ask(params.query, { source: params.source, scope: params.scope });
 				recordSavings(out, ctx);
-				if (params.scope) {
-					const prefix = params.scope.endsWith("/") ? params.scope : `${params.scope}/`;
-					out = out.split("\n").filter((l) => !l.includes(prefix) || l.includes("graft ask")).join("\n");
-				}
 				return toolResult(cap(out, maxOut(root)), { cmd: `graft ask ${params.query}` });
 			} catch (e) {
 				return toolResult(`graft ask: ${(e as Error).message}`, { error: "query" });
@@ -414,7 +410,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 		name: "graft_blast",
 		label: "graft_blast",
 		description:
-			"Blast radius git-диффа по графу Graft: что зависит от строк, затронутых изменениями. base — референс для diff (например origin/main); без base — индекс/stage.",
+			"Blast radius git-диффа по графу Graft: что зависит от строк, затронутых изменениями. base — референс для diff (например origin/main); без base — working tree (незакоммиченные изменения).",
 		promptSnippet: "Blast radius of a git diff from the Graft graph.",
 		parameters: Type.Object({
 			base: Type.Optional(Type.String({ description: "Git-референс для сравнения (например origin/main)" })),
@@ -438,7 +434,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 	/** Push: топ-хиты графа под промпт (askJson) + scope-хинт + сессионный dedup (retract:
 	 *  старые пакеты не повторять — только новые id; пусто → пакет не инжектится). */
-	const pushHits = async (root: string, prompt: string, words: string[]): Promise<string | null> => {
+	const pushHits = async (root: string, prompt: string, words: string[], ctx: ExtensionContext): Promise<string | null> => {
 		await (async () => {
 			const fr = await ensureFresh(root, { timeoutMs: freshTimeoutMs(root) });
 			if (fr.stale) setSyncingBadge(ctx);
@@ -524,7 +520,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			const words = event.prompt.match(/[a-zA-Zа-яё][a-zA-Zа-яё-]{3,}/g) ?? [];
 			if (event.prompt.trim().length >= 15 && words.length > 0) {
 				try {
-					const out = await pushHits(root, event.prompt, words);
+					const out = await pushHits(root, event.prompt, words, ctx);
 					if (out) parts.push(cap(out, 4000));
 				} catch {
 					// тихо
