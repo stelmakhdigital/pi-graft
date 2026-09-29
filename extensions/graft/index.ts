@@ -625,7 +625,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 	// ---------- Команда /graft ----------
 
 	pi.registerCommand("graft", {
-		description: "Статус Graft: /graft — сводка; /graft stats — экономия по периодам; /graft build [, deep] — пересобрать граф",
+		description: "Graft: /graft — сводка; ask|grep|callers|skeleton|map|check|blast — запросы к графу; stats — экономия; build [deep] — пересобрать; config show — LLM-конфиг",
 		handler: async (args: string, ctx) => {
 			const root = rootOf(ctx);
 			const parts: string[] = [`Graft: pi-graft-engine (engine, свой движок)`];
@@ -648,6 +648,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 			if (w7.calls > 0) parts.push(`Сводка за 7 дней: ${w7.calls} вызовов, ≈${fmtTok(w7.tokens)} токенов (подробно: /graft stats)`);
 
 			const arg = args.trim();
+			const [cmd, ...rest] = arg.split(/\s+/);
+			const restArg = rest.join(" ");
 			if (arg === "stats" || arg.startsWith("stats ")) {
 				const lines: string[] = [];
 				statsReport(lines);
@@ -684,6 +686,33 @@ export default function graftExtension(pi: ExtensionAPI) {
 					ctx.ui.notify(`graft build: ${(e as Error).message}`, "error");
 				}
 				await refreshBadge(ctx, root);
+				return;
+			}
+
+			// Подкоманды-запросы к графу: ask/grep/callers/skeleton/map/check/blast/config.
+			const USAGE = "Команды: /graft ask <запрос> · grep <regex> · callers <символ> [in|out] · skeleton <file> · map · check · blast [base] · config show · stats · build [deep]";
+			if (arg) {
+				if (!root) {
+					ctx.ui.notify("Нет графа (graft/ не найден выше cwd) — сначала `/graft build` в корне репо.", "error");
+					return;
+				}
+				const q = makeQueries(root);
+				const out = (t: string): void => { mapCache = null; ctx.ui.notify(cap(t, maxOut(root)), "info"); };
+				try {
+					switch (cmd) {
+						case "ask": if (!restArg) throw new Error("использование: /graft ask <запрос>"); out(q.ask(restArg, { source: true })); break;
+						case "grep": if (!restArg) throw new Error("использование: /graft grep <regex>"); out(q.grep(restArg)); break;
+						case "callers": if (!restArg) throw new Error("использование: /graft callers <символ> [in|out]"); out(q.callers(rest[0], { direction: rest[1] === "in" || rest[1] === "out" ? rest[1] : undefined })); break;
+						case "skeleton": if (!restArg) throw new Error("использование: /graft skeleton <file>"); out(q.skeleton(restArg)); break;
+						case "map": out(q.map()); break;
+						case "check": out((await q.check()).text); break;
+						case "blast": out(await q.blast(restArg || undefined)); break;
+						case "config": if (restArg !== "show") throw new Error("пока поддерживается: /graft config show (настройка — через CLI `graft config set`)"); { const c = resolveDeepConfig(root).config; out(c ? `LLM: ${c.model} @ ${c.baseUrl} (apiKey: ${c.apiKey ? "задан" : "нет"})` : "LLM-конфиг не задан (CLI: `graft config set --base-url … --model …`)"); } break;
+						default: throw new Error("неизвестная команда. " + USAGE);
+					}
+				} catch (e) {
+					ctx.ui.notify(`graft ${cmd}: ${(e as Error).message}`, "error");
+				}
 				return;
 			}
 
