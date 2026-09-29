@@ -117,6 +117,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 	const noGraphHint =
 		"В этом каталоге нет графа Graft (graft/.engine не найден выше cwd). Собери: `/graft build` (или `node engine/bin/graft.mjs build`), затем вызови инструмент снова.";
+	const disabledHint = "graft: отключено флагом --graft=false — инструменты не отвечают.";
 
 
 	async function refreshBadge(ctx: ExtensionContext, root: string | null): Promise<void> {
@@ -285,6 +286,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			scope: Type.Optional(Type.String({ description: "Ограничить подпроектом монорепо (префикс пути)" })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -315,6 +317,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			ignoreCase: Type.Optional(Type.Boolean({ description: "Без учёта регистра" })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -345,6 +348,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			scope: Type.Optional(Type.String({ description: "Показать только зависимости в скоупе (имя скоупа из [scope/] или префикс пути)" })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -372,6 +376,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			file: Type.String({ description: "Путь к файлу (относительно корневого каталога графа)" }),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -399,6 +404,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			maxDirs: Type.Optional(Type.Number({ description: "Число каталогов в выводе (по умолчанию — авто)" })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -424,6 +430,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 		promptSnippet: "Freshness/drift report of the Graft graph (JSON).",
 		parameters: Type.Object({}),
 		async execute(_id, _params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
@@ -447,6 +454,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 			base: Type.Optional(Type.String({ description: "Git-референс для сравнения (например origin/main)" })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (pi.getFlag("graft") === false) return toolResult(disabledHint, { error: "disabled" });
 			const root = rootOf(ctx);
 			if (!root || !enabled(ctx)) return toolResult(noGraphHint, { error: "no-graph" });
 			trackMetrics(ctx, { calls: 1 });
