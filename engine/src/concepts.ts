@@ -41,6 +41,7 @@ export async function conceptsBuild(root: string, g: Graph, cfg: DeepConfig, onP
 	if (deep.concepts?.hash === hash) return deep.concepts.topics;
 
 	let topics: DeepConcept[] | null = null;
+	let llmFailed = false; // транзитный сбой LLM — fallback вернуть, но НЕ кэшировать (рети на след. сборке)
 	const hasSummaries = Object.values(summaries).some(Boolean);
 
 	if (hasSummaries && cfg.baseUrl && cfg.model) {
@@ -71,6 +72,7 @@ ${input}`,
 			// LLM-сбой/плохой ответ — не роняем build: детерминированный fallback ниже.
 			onProgress?.(`concepts: LLM не ответил (${(e as Error).message.slice(0, 80)}) — fallback по каталогам`);
 			topics = null;
+			llmFailed = true;
 		}
 	}
 
@@ -146,7 +148,9 @@ ${input}`,
 			const [fa, fb] = k.split("->").map(Number);
 			return { from: topics[fa].name, to: topics[fb].name, type: "uses" as const, count: n };
 		});
-	deep.concepts = { hash, topics, links };
-	writeDeep(root, deep);
+	if (!llmFailed) {
+		deep.concepts = { hash, topics, links };
+		writeDeep(root, deep);
+	}
 	return topics;
 }

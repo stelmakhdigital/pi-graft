@@ -165,7 +165,7 @@ function ensureDir(dir: string): void {
 /** Инициализированные сабмодули (gitlink'и): пути из `git ls-files -s` (mode 160000). */
 export async function submodulePaths(root: string): Promise<string[]> {
 	return new Promise<string[]>((res) => {
-		execFile("git", ["-C", root, "ls-files", "-s"], { maxBuffer: 16 * 1024 * 1024 }, (err: Error | null, stdout: string) => {
+		execFile("git", ["-C", root, "-c", "core.quotepath=false", "ls-files", "-s"], { maxBuffer: 16 * 1024 * 1024 }, (err: Error | null, stdout: string) => {
 			if (err) return res([]);
 			const out: string[] = [];
 			for (const line of stdout.split("\n")) {

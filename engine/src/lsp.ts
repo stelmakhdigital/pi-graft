@@ -178,6 +178,8 @@ async function lspResolveLang(root: string, def: LspServerDef, lang: string, lis
 		arr.push(n);
 		nodeByFile.set(n.path, arr);
 	}
+	// file-узлы — валидные fallback-цели (id, не путь-строка: dangling-баг до сессии).
+	const fileNodeId = new Map<string, string>(g.nodes.filter((n) => n.kind === "file").map((n) => [n.path, n.id]));
 	const rel = (p: string) => (isAbsolute(p) ? relative(root, p) : p);
 
 	for (const [file, items] of byFile) {
@@ -205,8 +207,9 @@ async function lspResolveLang(root: string, def: LspServerDef, lang: string, lis
 					if (!loc.uri || !loc.uri.startsWith("file://")) continue;
 					const tFile = rel(decodeURIComponent(loc.uri.slice("file://".length)));
 					const line = loc.range?.start?.line ?? -1;
-					const target = findNodeAtLine(nodeByFile.get(tFile) ?? [], line);
-					if (!target) continue; // цель вне графа (.d.ts и т.п.) — не создавать dangling-указатель
+					// Цель: символ по строке; не найдён — file-узел (валидный id, не dangling-путь); цель вне графа — пропуск.
+					const target = findNodeAtLine(nodeByFile.get(tFile) ?? [], line) ?? fileNodeId.get(tFile) ?? null;
+					if (!target) continue;
 					const key = `${c.caller}->${target}:calls`;
 					if (existing.has(key) || c.caller === target) continue;
 					existing.add(key);
@@ -227,9 +230,10 @@ async function lspResolveLang(root: string, def: LspServerDef, lang: string, lis
 
 function findNodeAtLine(nodes: Array<{ id: string; span: { start: number; end: number } }>, line: number): string | null {
 	if (line < 0) return null;
-	const exact = nodes.filter((n) => n.span.start === line);
+	const l = line + 1; // LSP 0-based → span 1-based (extract: startPosition.row + 1)
+	const exact = nodes.filter((n) => n.span.start === l);
 	if (exact.length > 0) return exact[0].id;
-	const inside = nodes.find((n) => n.span.start <= line && line <= n.span.end);
+	const inside = nodes.find((n) => n.span.start <= l && l <= n.span.end);
 	return inside ? inside.id : null;
 }
 

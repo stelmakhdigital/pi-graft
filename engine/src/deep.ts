@@ -151,6 +151,7 @@ export async function deepBuild(root: string, g: Graph, cfg: DeepConfig, onProgr
 			report.symbolsFailed++;
 			onProgress?.(`символ НЕ готов (${(e as Error).message.slice(0, 60)}): ${s.name}`);
 		}
+		writeDeep(root, deep); // инкрементально: обрыв длинной symbol-фазы не теряет LLM-вызовы
 	}
 
 	writeDeep(root, deep);

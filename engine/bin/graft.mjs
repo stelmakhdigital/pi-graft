@@ -48,7 +48,7 @@ function optVal(name) {
 	return i >= 0 ? rest[i + 1] : undefined;
 }
 // Позиционные аргументы: без флагов и значений флагов-приёмников ("--dir somedir" не даёт "somedir").
-const VALUE_FLAGS = new Set(["--dir", "--in", "--scope", "-d", "--depth", "-n", "--max-dirs", "--format", "--base"]);
+const VALUE_FLAGS = new Set(["--dir", "--in", "--scope", "-d", "--depth", "-n", "--max-dirs", "--format", "--base", "--direction", "--export-viz"]);
 function positionals() {
 	const out = [];
 	let skip = false;
@@ -232,7 +232,7 @@ switch (cmd) {
 		break;
 	}
 	case "blast": {
-		const base = rest.find((a) => !a.startsWith("-") && a !== optVal("--format"));
+		const base = positionals()[0];
 		await engine.ensureFresh(root);
 		const q = engine.makeQueries(root);
 		const format = optVal("--format") ?? "text";

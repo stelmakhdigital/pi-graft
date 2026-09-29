@@ -33,7 +33,7 @@ import {
 	findGraphRoot,
 	isRebuilding,
 	makeQueries,
-	readGraph,
+	readGraphCached,
 	resolveDeepConfig,
 	scopeOfPath,
 } from "../../engine/src/index.js";
@@ -179,8 +179,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 			const p = metricsPath(sid);
 			let m: MetricsFile = { calls: 0, tokens: 0, graftTurns: 0, reportedTurns: 0, sourceReads: 0, sourceTokens: 0, ts: Date.now() };
 			try { m = { ...m, ...(JSON.parse(readFileSync(p, "utf8")) as MetricsFile) }; } catch { /* новая сессия */ }
-			// Дневной ролловер: dayCalls/dayTokens — только текущий день, hist — архив по дням.
-			const today = new Date().toISOString().slice(0, 10);
+			// Дневной ролловер: dayCalls/dayTokens — только текущий день, hist — архив по дням (локальный день, как в /graft stats).
+			const today = localDay();
 			if (m.day && m.day !== today) {
 				m.hist = [...(m.hist ?? []), { d: m.day, c: m.dayCalls ?? 0, t: m.dayTokens ?? 0 }].slice(-40);
 				m.dayCalls = 0;
@@ -222,10 +222,15 @@ export default function graftExtension(pi: ExtensionAPI) {
 			return [];
 		}
 	};
+	/** Локальная дата YYYY-MM-DD (UTC-ключи давали «Сегодня» со сдвигом по часовому поясу). */
+	const localDay = (ts: number = Date.now()): string => {
+		const d = new Date(ts);
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	};
 	/** Периодная сумма: по дневным архивам (hist + текущий day), а не по lifetime-счётчикам. */
 	const aggregateMetrics = (files: MetricsFile[], fromTs: number): { calls: number; tokens: number } => {
 		const agg = { calls: 0, tokens: 0 };
-		const fromDay = new Date(fromTs).toISOString().slice(0, 10);
+		const fromDay = localDay(fromTs);
 		for (const m of files) {
 			if (m.day) {
 				for (const h of m.hist ?? []) if (h.d >= fromDay) { agg.calls += h.c; agg.tokens += h.t; }
@@ -480,7 +485,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 		})();
 		let scopes: Record<string, string[]> = {};
 		try {
-			scopes = readGraph(root).meta.scopes ?? {};
+			scopes = readGraphCached(root).meta.scopes ?? {};
 		} catch {
 			/* графа ещё нет */
 		}
@@ -550,7 +555,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 					const out = makeQueries(root).map();
 					mapCache = { root, text: out, at: Date.now() };
 				} catch {
-					if (!mapCache) return;
+					if (!mapCache || mapCache.root !== root) return; // чужую (старого корня) карту не подмешиваем
 				}
 			}
 			parts.push(mapCache.text);

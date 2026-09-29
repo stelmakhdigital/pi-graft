@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { readGraph } from "./store.js";
 
 export { conceptsBuild, proseBuild, serveViz, writeViz };
-export { readGraph, readDeep, writeCards, writeDeep } from "./store.js";
+export { readGraph, readGraphCached, readDeep, writeCards, writeDeep } from "./store.js";
 export { scopeOfPath } from "./query.js";
 import { hasDeep, hasGraph, readDeep, writeCards, writeGraph, writeIndex, writeUnresolved } from "./store.js";
 import { makeQueries } from "./query.js";
