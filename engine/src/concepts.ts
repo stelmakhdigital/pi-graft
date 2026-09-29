@@ -44,6 +44,7 @@ export async function conceptsBuild(root: string, g: Graph, cfg: DeepConfig, onP
 	const hasSummaries = Object.values(summaries).some(Boolean);
 
 	if (hasSummaries && cfg.baseUrl && cfg.model) {
+		try {
 		const input = paths.map((p) => `- ${p}: ${summaries[p] || "(нет summary)"}`).join("\n").slice(0, 24_000);
 		const raw = await llmChat(
 			cfg,
@@ -66,6 +67,11 @@ ${input}`,
 			.filter((t) => t.files.length > 0);
 		if (!mapped.length) throw new Error("concepts: LLM не вернул ни одной темы с файлами");
 		topics = mapped;
+		} catch (e) {
+			// LLM-сбой/плохой ответ — не роняем build: детерминированный fallback ниже.
+			onProgress?.(`concepts: LLM не ответил (${(e as Error).message.slice(0, 80)}) — fallback по каталогам`);
+			topics = null;
+		}
 	}
 
 	// Пост-процесс: все файлы обязаны быть в каком-то топике.

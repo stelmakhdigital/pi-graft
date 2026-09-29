@@ -80,9 +80,9 @@ export default function graftExtension(pi: ExtensionAPI) {
 		default: true,
 	});
 
-	let mapCache: { text: string; at: number } | null = null;
+	let mapCache: { root: string; text: string; at: number } | null = null;
 	const MAP_TTL_MS = 120_000;
-	let freshCache: { at: number; st: Awaited<ReturnType<typeof checkStatus>> } | null = null;
+	let freshCache: { root: string; at: number; st: Awaited<ReturnType<typeof checkStatus>> } | null = null;
 	const FRESH_TTL_MS = 30_000;
 	let bgSyncRunning = false;
 	/** Бюджет синхронного rebuild'а: дольше — отвечаем по старому графу, rebuild докручивается фоном.
@@ -150,7 +150,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 	/** Сессионные метрики на диске (~/.local/state/pi-graft/metrics/<sid>.json, override: GRFT_STATE_DIR). */
 	const metricsDir = (): string => process.env.GRFT_STATE_DIR?.trim() || join(homedir(), ".local", "state", "pi-graft", "metrics");
 	const metricsPath = (sid: string): string => join(metricsDir(), `${sid}.json`);
-	interface MetricsFile { calls: number; tokens: number; graftTurns: number; reportedTurns: number; sourceReads: number; sourceTokens: number; ts: number }
+	interface MetricsFile { calls: number; tokens: number; graftTurns: number; reportedTurns: number; sourceReads: number; sourceTokens: number; ts: number; day?: string; dayCalls?: number; dayTokens?: number; hist?: Array<{ d: string; c: number; t: number }> }
 	const readMetrics = (ctx: ExtensionContext): MetricsFile | null => {
 		try {
 			const sid = (ctx.sessionManager as { getSessionId?: () => string } | undefined)?.getSessionId?.();
@@ -167,6 +167,16 @@ export default function graftExtension(pi: ExtensionAPI) {
 			const p = metricsPath(sid);
 			let m: MetricsFile = { calls: 0, tokens: 0, graftTurns: 0, reportedTurns: 0, sourceReads: 0, sourceTokens: 0, ts: Date.now() };
 			try { m = { ...m, ...(JSON.parse(readFileSync(p, "utf8")) as MetricsFile) }; } catch { /* новая сессия */ }
+			// Дневной ролловер: dayCalls/dayTokens — только текущий день, hist — архив по дням.
+			const today = new Date().toISOString().slice(0, 10);
+			if (m.day && m.day !== today) {
+				m.hist = [...(m.hist ?? []), { d: m.day, c: m.dayCalls ?? 0, t: m.dayTokens ?? 0 }].slice(-40);
+				m.dayCalls = 0;
+				m.dayTokens = 0;
+			}
+			m.day = today;
+			m.dayCalls = (m.dayCalls ?? 0) + (patch.calls ?? 0);
+			m.dayTokens = (m.dayTokens ?? 0) + (patch.tokens ?? 0);
 			m.calls += patch.calls ?? 0;
 			m.tokens += patch.tokens ?? 0;
 			m.graftTurns += patch.graftTurns ?? 0;
@@ -198,10 +208,16 @@ export default function graftExtension(pi: ExtensionAPI) {
 			return [];
 		}
 	};
+	/** Периодная сумма: по дневным архивам (hist + текущий day), а не по lifetime-счётчикам. */
 	const aggregateMetrics = (files: MetricsFile[], fromTs: number): { calls: number; tokens: number } => {
 		const agg = { calls: 0, tokens: 0 };
+		const fromDay = new Date(fromTs).toISOString().slice(0, 10);
 		for (const m of files) {
-			if ((m.ts ?? 0) >= fromTs) {
+			if (m.day) {
+				for (const h of m.hist ?? []) if (h.d >= fromDay) { agg.calls += h.c; agg.tokens += h.t; }
+				if (m.day >= fromDay) { agg.calls += m.dayCalls ?? 0; agg.tokens += m.dayTokens ?? 0; }
+			} else if ((m.ts ?? 0) >= fromTs) {
+				// старые метрики без дневного учёта — lifetime-приближение (назад-совместимость)
 				agg.calls += m.calls ?? 0;
 				agg.tokens += m.tokens ?? 0;
 			}
@@ -220,7 +236,9 @@ export default function graftExtension(pi: ExtensionAPI) {
 		row("Сегодня", dayStart.getTime());
 		row("7 дней", Date.now() - 7 * 86_400_000);
 		row("30 дней", Date.now() - 30 * 86_400_000);
-		row("Всего", 0);
+		// «Всего» — lifetime-счётчики (история hist ограничена 40 днями)
+		const lifetime = { calls: files.reduce((s2, m) => s2 + (m.calls ?? 0), 0), tokens: files.reduce((s2, m) => s2 + (m.tokens ?? 0), 0) };
+		lines.push(`  Всего: ${lifetime.calls} вызовов, ≈${fmtTok(lifetime.tokens)} токенов`);
 		const turns = files.reduce((s2, m) => s2 + (m.graftTurns ?? 0), 0);
 		const reported = files.reduce((s2, m) => s2 + (m.reportedTurns ?? 0), 0);
 		if (turns > 0) lines.push(`  🌱-отчёт в ответе: ${reported} из ${turns} graft-ходов`);
@@ -377,7 +395,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 					if (fr.stale) setSyncingBadge(ctx);
 				})();
 				const out = makeQueries(root).map({ maxDirs: params.maxDirs });
-				mapCache = { text: out, at: Date.now() };
+				if (params.maxDirs == null) mapCache = { root, text: out, at: Date.now() }; // кэш держит только каноническую карту
 				return toolResult(cap(out, maxOut(root)), { cmd: "graft map" });
 			} catch (e) {
 				return toolResult(`graft map: ${(e as Error).message}`, { error: "query" });
@@ -501,14 +519,14 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 		const parts: string[] = [];
 		if (wantMap) {
-			if (!mapCache || Date.now() - mapCache.at > MAP_TTL_MS) {
+			if (!mapCache || mapCache.root !== root || Date.now() - mapCache.at > MAP_TTL_MS) {
 				try {
 					await (async () => {
 						const fr = await ensureFresh(root, { timeoutMs: freshTimeoutMs(root) });
 						if (fr.stale) setSyncingBadge(ctx);
 					})();
 					const out = makeQueries(root).map();
-					mapCache = { text: out, at: Date.now() };
+					mapCache = { root, text: out, at: Date.now() };
 				} catch {
 					if (!mapCache) return;
 				}
@@ -533,8 +551,8 @@ export default function graftExtension(pi: ExtensionAPI) {
 				`Для уточнения есть инструменты graft_ask/graft_grep/graft_callers/graft_skeleton.`,
 			];
 			try {
-				if (!freshCache || Date.now() - freshCache.at > FRESH_TTL_MS) {
-					freshCache = { at: Date.now(), st: await checkStatus(root) };
+				if (!freshCache || freshCache.root !== root || Date.now() - freshCache.at > FRESH_TTL_MS) {
+					freshCache = { root, at: Date.now(), st: await checkStatus(root) };
 				}
 				const st = freshCache.st;
 				if (st.text !== "нет графа") {

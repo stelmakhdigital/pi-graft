@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { engineDir, hasGraph } from "./store.js";
+import { atomicWrite, engineDir, hasGraph } from "./store.js";
 import { isIndexablePath, listRepoPaths, readBuildConfig, effectiveRuntime } from "./scan.js";
 
 const FP_NAME = "fingerprint.json";
@@ -54,7 +54,7 @@ export async function writeFingerprint(root: string, paths: string[], hashes: Re
 	}
 	const fp: Fingerprint = { mode: useHash ? "hash" : "stat", paths, files };
 	mkdirSync(engineDir(root), { recursive: true });
-	writeFileSync(fpPath(root), JSON.stringify(fp, null, 0));
+	atomicWrite(fpPath(root), JSON.stringify(fp, null, 0));
 }
 
 function readFp(root: string): Fingerprint | null {

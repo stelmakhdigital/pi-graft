@@ -1,5 +1,5 @@
 /** Хранилище: graft/.engine/{graph.json,deep.json}, graft/cards/, graft/index.md. */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeepStore, Graph, LspCandidate } from "./types.js";
 
@@ -12,6 +12,13 @@ export function engineDir(root: string): string {
 
 export function hasGraph(root: string): boolean {
 	return existsSync(join(engineDir(root), "graph.json"));
+}
+
+/** Атомарная запись: tmp + rename — обрыв на полуслове не оставляет усечённого артефакта. */
+export function atomicWrite(p: string, data: string): void {
+	const tmp = p + ".tmp";
+	writeFileSync(tmp, data);
+	renameSync(tmp, p);
 }
 
 export function readGraph(root: string): Graph {
@@ -63,7 +70,7 @@ export function writeGraph(root: string, g: Graph): void {
 	mkdirSync(dir, { recursive: true });
 	// Чистим старый формат (nanonets: graft/wiring.json, карточки по дереву).
 	rmSync(join(root, "graft", "wiring.json"), { force: true });
-	writeFileSync(join(dir, "graph.json"), JSON.stringify(g, null, 1));
+	atomicWrite(join(dir, "graph.json"), JSON.stringify(g, null, 1));
 	invalidateGraphCache(root);
 }
 
@@ -89,7 +96,7 @@ export function readUnresolved(root: string): LspCandidate[] {
 
 export function writeDeep(root: string, d: DeepStore): void {
 	mkdirSync(engineDir(root), { recursive: true });
-	writeFileSync(join(engineDir(root), "deep.json"), JSON.stringify(d, null, 1));
+	atomicWrite(join(engineDir(root), "deep.json"), JSON.stringify(d, null, 1));
 	deepCache.delete(root);
 }
 

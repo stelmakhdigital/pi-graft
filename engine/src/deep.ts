@@ -81,7 +81,13 @@ export async function deepBuild(root: string, g: Graph, cfg: DeepConfig, onProgr
 			report.filesCached++;
 			continue;
 		}
-		const content = readFileSync(join(root, f.path), "utf8");
+		let content: string;
+		try {
+			content = readFileSync(join(root, f.path), "utf8");
+		} catch {
+			report.filesCached++; // файл исчез между scan и deep-проходом — пропускаем
+			continue;
+		}
 		const preview = content.slice(0, 6000);
 		const syms = g.nodes.filter((n) => n.path === f.path && n.kind !== "file").map((n) => `${n.kind} ${n.name}`).join(", ");
 		try {
@@ -93,6 +99,7 @@ export async function deepBuild(root: string, g: Graph, cfg: DeepConfig, onProgr
 			report.symbolsFailed++;
 			onProgress?.(`файл НЕ готов (${(e as Error).message.slice(0, 80)}): ${f.path}`);
 		}
+		writeDeep(root, deep); // инкрементально: обрыв забега не теряет прогресс и LLM-вызовы
 	}
 
 	for (const s of symNodes) {
@@ -101,7 +108,13 @@ export async function deepBuild(root: string, g: Graph, cfg: DeepConfig, onProgr
 			report.symbolsCached++;
 			continue;
 		}
-		const content = readFileSync(join(root, s.path), "utf8");
+		let content: string;
+		try {
+			content = readFileSync(join(root, s.path), "utf8");
+		} catch {
+			report.symbolsFailed++; // файл исчез — пропускаем символ
+			continue;
+		}
 		const lines = content.split("\n");
 		const body = lines.slice(s.span.start - 1, Math.min(lines.length, s.span.end)).join("\n");
 		if (body.length > 4000) {
