@@ -137,7 +137,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 
 	/** Сессионный накопитель «tokens saved» (строка [graft] tokens saved ≈ в выводах тулов). */
 	interface SavingsSession { tokens: number; calls: number }
-	const savingsSession: SavingsSession = (globalThis as Record<string, unknown>).__graftSavings ??= { tokens: 0, calls: 0 };
+	const savingsSession: SavingsSession = ((globalThis as Record<string, unknown>).__graftSavings as SavingsSession | undefined) ??= { tokens: 0, calls: 0 };
 	const recordSavings = (out: string, ctx?: ExtensionContext): void => {
 		const m = /\[graft\] tokens saved ≈ ([\d,]+)/.exec(out);
 		if (m) {
@@ -481,7 +481,7 @@ export default function graftExtension(pi: ExtensionAPI) {
 		const STRONG_FLOOR = 0.3;
 		const HIGH_FLOOR = 0.5;
 		if (strong < STRONG_FLOOR && broad < HIGH_FLOOR) {
-			const nudged: boolean = (globalThis as Record<string, unknown>).__graftPushNudged ?? false;
+			const nudged: boolean = ((globalThis as Record<string, unknown>).__graftPushNudged as boolean | undefined) ?? false;
 			(globalThis as Record<string, unknown>).__graftPushNudged = true;
 			if (nudged) return null;
 			return `## Граф не дал сильного совпадения по этому промпту — если нужен код, начни с graft_ask «задача» (детерминированный поиск).`;
